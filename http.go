@@ -9,19 +9,42 @@ import (
 // TODO 套接字、请求处理、执行cgi、多线程、进程通信
 func acceptRequest(conn net.Conn) {
 	reader := bufio.NewReader(conn)
-	var buf [128]byte
-	n, err := reader.Read(buf[:])
+	var buf [1024]byte
+	var method [512]byte
+	len, err := reader.Read(buf[:])
 	if err != nil {
 		fmt.Println("Read from client failed, error:", err)
 		return
 	}
-	recvStr := string(buf[:n])
-	fmt.Println("收到client发来的信息:", recvStr)
-	_, err = conn.Write([]byte(recvStr))
-	if err != nil {
-		fmt.Println("Send data to client failed, error:", err)
-		return
-	}
+
+}
+
+func executeCGI() {
+	//TODO 执行CGI
+}
+
+func renderFile() {
+	//TODO 渲染网页文件
+}
+
+func readHeaders(conn net.Conn, len int) {
+	//TODO 读取http头
+}
+
+func readBody() {
+	//TODO 读取报文体
+}
+
+func readLine(conn net.Conn, len int) {
+	//TODO 读取一行http报文数据
+}
+
+func notFound() {
+	//TODO 404error
+}
+
+func serverInternalError() {
+	//TODO 500
 }
 
 func main() {
