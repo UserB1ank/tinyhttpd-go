@@ -14,6 +14,7 @@ var SERVER_STRING string = "Server: tinyhttpd-go/1.1\r\n"
 
 // TODO 套接字、请求处理、执行cgi、多线程、进程通信
 func acceptRequest(conn net.Conn) {
+	cgi := false
 	defer conn.Close()
 	//处理http请求数据
 	reader := bufio.NewReader(conn)
@@ -21,8 +22,19 @@ func acceptRequest(conn net.Conn) {
 	data = make(map[string]string)
 	data, err := resolveHttp(reader, conn)
 	if err != nil {
+		serverInternalError(conn)
 		fmt.Println(err)
 		return
+	}
+	//判断是由需要cgi
+	if strings.Contains(data["url"], "?") {
+		cgi = true
+		loc := strings.Index(data["url"], "?")
+		data["param"] = data["url"][loc:]
+		data["url"] = data["url"][:loc]
+		fmt.Println(cgi)
+	} else if data["method"] == "post" {
+		cgi = true
 	}
 	//判断url是否正确
 	filePath := "." + data["url"]
@@ -34,52 +46,23 @@ func acceptRequest(conn net.Conn) {
 	if fileInfo.IsDir() {
 		filePath = filepath.Join(filePath, "index.html")
 	}
-	//依据数据做出处理
-	if strings.ToLower(data["method"]) == "get" {
+
+	//处理常规GET请求
+	if strings.ToLower(data["method"]) == "get" && !cgi {
 		_, err = renderFile(conn, filePath)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-	} else {
+		return
+	}
+	//处理cgi
+	if cgi {
 
 	}
-
 	//var test []byte
 	//test = append(test, []byte("haha")...)
 	//conn.Write(test)
-}
-
-func headers(conn net.Conn) (bool, any) {
-	var buf []byte
-	s := "HTTP/2 200 OK\r\n" +
-		"Content-Type: text/html\r\n" +
-		SERVER_STRING +
-		"\r\n"
-	buf = append(buf, []byte(s)...)
-	_, err := conn.Write(buf[:])
-	if err != nil {
-		return false, nil
-	}
-	return true, nil
-}
-
-func executeCGI() {
-	//TODO 执行CGI
-}
-
-func renderFile(conn net.Conn, path string) (bool, error) {
-
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-	headers(conn)
-	_, err = conn.Write(file)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 /*处理报文，返回一个map，存储了http报文的method,URL,http版本(暂未获取),headers,body
@@ -95,6 +78,7 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	parts := strings.Fields(string(line))
 	if len(parts) < 2 {
 		//TODO 抛出 500 error
+		serverInternalError(conn)
 		return nil, "server error 500"
 	}
 	data["method"] = parts[0]
@@ -120,8 +104,7 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 		data["headers"] = data["headers"] + string(line)
 	}
 	if strings.ToLower(data["method"]) != "post" && strings.ToLower(data["method"]) != "get" {
-		//TODO 抛出405 not allowed method
-		err := "405 Method not allowed"
+		methodNotAllowed(conn)
 		return nil, err
 	}
 	//var buf [1024]byte
@@ -139,7 +122,39 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	//fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
 }
+func headers(conn net.Conn) (bool, any) {
+	s := "HTTP/2 200 OK\r\n" +
+		"Content-Type: text/html\r\n" +
+		SERVER_STRING +
+		"\r\n"
+	_, err := conn.Write([]byte(s))
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+}
 
+//
+//func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error) {
+//	//TODO 执行CGI
+//	var input chan string
+//	os.Executable()
+//	return true, nil
+//}
+
+func renderFile(conn net.Conn, path string) (bool, error) {
+
+	file, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	headers(conn)
+	_, err = conn.Write(file)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
 func notFound(conn net.Conn) (bool, error) {
 	//TODO 404error
 	s := "HTTP/1.0 404 NOT FOUND\r\n" +
@@ -151,18 +166,57 @@ func notFound(conn net.Conn) (bool, error) {
 		"your request because the resource specified\r\n" +
 		"is unavailable or nonexistent.\r\n" +
 		"</BODY></HTML>\r\n"
-	var buf []byte
-	buf = append(buf, []byte(s)...)
-	//fmt.Println(string(buf))
-	_, err := conn.Write(buf)
+	_, err := conn.Write([]byte(s))
 	if err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func serverInternalError() {
+func serverInternalError(conn net.Conn) (bool, error) {
 	//TODO 500
+	s := "HTTP/1.1 500 Internal Server Error\r\n" +
+		"Content-Type: text/html\r\n" +
+		"\r\n" +
+		"<!DOCTYPE html>\r\n" +
+		"<html lang=\"en\">\r\n" +
+		"<head>\r\n" +
+		"    <meta charset=\"UTF-8\">\r\n" +
+		"    <title>500 Internal Server Error</title>\r\n" +
+		"</head>\r\n" +
+		"<body>\r\n" +
+		"    <h1>500 Internal Server Error</h1>\r\n" +
+		"    <p>The server encountered an internal error and was unable to complete your request.</p>\r\n" +
+		"</body>\r\n" +
+		"</html>\r\n"
+	_, err := conn.Write([]byte(s))
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+func methodNotAllowed(conn net.Conn) (bool, error) {
+	//TODO 500
+	s := "HTTP/1.1 405 Method Not Allowed\r\n" +
+		"Allow: GET, POST, PUT\r\n" +
+		"Content-Type: text/html\r\n" +
+		"\r\n" +
+		"<!DOCTYPE html>\r\n" +
+		"<html lang=\"en\">\r\n" +
+		"<head>\r\n" +
+		"    <meta charset=\"UTF-8\">\r\n" +
+		"    <title>405 Method Not Allowed</title>\r\n" +
+		"</head>\r\n" +
+		"<body>\r\n" +
+		"    <h1>405 Method Not Allowed</h1>\r\n" +
+		"    <p>The requested method is not allowed for the requested resource.</p>\r\n" +
+		"</body>\r\n" +
+		"</html>\r\n"
+	_, err := conn.Write([]byte(s))
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func main() {
