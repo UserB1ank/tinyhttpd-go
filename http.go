@@ -14,13 +14,8 @@ var SERVER_STRING string = "Server: tinyhttpd-go/1.1\r\n"
 
 // TODO 套接字、请求处理、执行cgi、多线程、进程通信
 func acceptRequest(conn net.Conn) {
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			fmt.Println("socket write failed,error:", err)
-		}
-		return
-	}(conn)
+	defer conn.Close()
+	//处理http请求数据
 	reader := bufio.NewReader(conn)
 	var data map[string]string
 	data = make(map[string]string)
@@ -29,18 +24,27 @@ func acceptRequest(conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
+	//判断url是否正确
+	filePath := "." + data["url"]
+	fileInfo, err1 := os.Stat(filePath)
+	if os.IsNotExist(err1) {
+		notFound(conn)
+		return
+	}
+	if fileInfo.IsDir() {
+		filePath = filepath.Join(filePath, "index.html")
+	}
+	//依据数据做出处理
+	if strings.ToLower(data["method"]) == "get" {
+		_, err = renderFile(conn, filePath)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	} else {
 
-	//test
-	t, err := headers(conn)
-	if !t && err != nil {
-		fmt.Println("write headers error:", err)
-		return
 	}
-	_, err2 := renderFile(conn, data["url"])
-	if err2 != nil {
-		fmt.Println(err2)
-		return
-	}
+
 	//var test []byte
 	//test = append(test, []byte("haha")...)
 	//conn.Write(test)
@@ -65,15 +69,12 @@ func executeCGI() {
 }
 
 func renderFile(conn net.Conn, path string) (bool, error) {
-	filePath := "." + path
-	fileInfo, _ := os.Stat(filePath)
-	if fileInfo.IsDir() {
-		filePath = filepath.Join(filePath, "index.html")
-	}
-	file, err := os.ReadFile(filePath)
+
+	file, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
 	}
+	headers(conn)
 	_, err = conn.Write(file)
 	if err != nil {
 		return false, err
@@ -139,8 +140,25 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	return data, nil
 }
 
-func notFound() {
+func notFound(conn net.Conn) (bool, error) {
 	//TODO 404error
+	s := "HTTP/1.0 404 NOT FOUND\r\n" +
+		"Content-Type: text/html\r\n" +
+		SERVER_STRING +
+		"\r\n" +
+		"<HTML><TITLE>Not Found</TITLE>\r\n" +
+		"<BODY><P>The server could not fulfill\r\n" +
+		"your request because the resource specified\r\n" +
+		"is unavailable or nonexistent.\r\n" +
+		"</BODY></HTML>\r\n"
+	var buf []byte
+	buf = append(buf, []byte(s)...)
+	//fmt.Println(string(buf))
+	_, err := conn.Write(buf)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func serverInternalError() {
