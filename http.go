@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+var SERVER_STRING string = "Server: tinyhttpd-go/1.1\r\n"
+
 // TODO 套接字、请求处理、执行cgi、多线程、进程通信
 func acceptRequest(conn net.Conn) {
 	defer func(conn net.Conn) {
@@ -26,6 +28,31 @@ func acceptRequest(conn net.Conn) {
 		return
 	}
 	fmt.Println(data)
+	t, err := headers(conn)
+	if !t && err != nil {
+		fmt.Println("write headers error:", err)
+		return
+	}
+	var test []byte
+	test = append(test, []byte("haha")...)
+	conn.Write(test)
+}
+
+func headers(conn net.Conn) (bool, any) {
+	var buf []byte
+	s := "HTTP/2 200 OK\r\n" +
+		"Content-Type: text/html\r\n" +
+		SERVER_STRING +
+		"\r\n"
+	buf = append(buf, []byte(s)...)
+	fmt.Println(buf)
+	//fmt.Println(string(buf[:]))
+	fmt.Println(len(buf))
+	_, err := conn.Write(buf[:])
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func executeCGI() {
@@ -83,8 +110,8 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	//fmt.Printf("剩余内容%q\n", string(buf[:length]))
 
 	if strings.ToLower(data["method"]) == "post" {
-		var buf [1024]byte
-		n, err := reader.Read(buf[:])
+		var buf []byte
+		n, err := reader.Read(buf)
 		if err != nil {
 			return nil, err
 		}
@@ -93,23 +120,6 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	//fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
 }
-
-//func readLine(reader *bufio.Reader) {
-//	//TODO 读取一行http报文数据
-//	//bytes, err := reader.ReadBytes('\n')
-//	//line, _, err := reader.ReadLine()
-//	line, _, err := reader.ReadLine()
-//	if err != nil {
-//		return
-//	}
-//	if err != nil {
-//		return
-//	}
-//	if err != nil {
-//		return
-//	}
-//	fmt.Printf("%q\n", string(line))
-//}
 
 func notFound() {
 	//TODO 404error
