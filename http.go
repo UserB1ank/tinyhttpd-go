@@ -18,22 +18,14 @@ func acceptRequest(conn net.Conn) {
 		return
 	}(conn)
 	reader := bufio.NewReader(conn)
-	//var data map[string]string
-	//data = make(map[string]string)
-	//var buf [1024]byte
-	//var method [512]byte
-	//length, err := reader.Read(buf[:])
-	//if err != nil {
-	//	fmt.Println("Read from client failed, error:", err)
-	//	return
-	//}
-	_, err := resolveHttp(reader, conn)
+	var data map[string]string
+	data = make(map[string]string)
+	data, err := resolveHttp(reader, conn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	//fmt.Println(data)
-
+	fmt.Println(data)
 }
 
 func executeCGI() {
@@ -49,7 +41,6 @@ func renderFile() {
 func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	var data map[string]string
 	data = make(map[string]string)
-
 	//获取method,URL
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
@@ -65,23 +56,41 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	data["headers"] = ""
 	data["body"] = ""
 	//获取headers
-	line, err = reader.ReadBytes('\n')
 	if err != nil {
 		return nil, err
 	}
-	for {
-		data["headers"] += string(line)
-		line, err := reader.ReadBytes('\n')
+	for { //TODO 如果报文是错误的，比如只有一半报文被传输，如何添加\r\n使得报文整体不出错
+		line, err = reader.ReadBytes('\n')
+		//fmt.Printf("current line-> %q\n", line)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return nil, err
-		} else if string(line) == "\r\n" {
+		}
+		if string(line) == "\r\n" || string(line) == "" {
 			break
 		}
+		//fmt.Printf("header-> %q\n", line)
+		data["headers"] = data["headers"] + string(line)
 	}
+	if strings.ToLower(data["method"]) != "post" && strings.ToLower(data["method"]) != "get" {
+		//TODO 抛出405 not allowed method
+		err := "405 Method not allowed"
+		return nil, err
+	}
+	//var buf [1024]byte
+	//length, _ := reader.Read(buf[:])
+	//fmt.Printf("剩余内容%q\n", string(buf[:length]))
 
-	fmt.Printf("%q\n", data)
+	if strings.ToLower(data["method"]) == "post" {
+		var buf [1024]byte
+		n, err := reader.Read(buf[:])
+		if err != nil {
+			return nil, err
+		}
+		data["body"] = string(buf[:n])
+	}
+	//fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
 }
 
@@ -111,7 +120,7 @@ func serverInternalError() {
 }
 
 func main() {
-	listen, err := net.Listen("tcp", "127.0.0.1:8080")
+	listen, err := net.Listen("tcp", "0.0.0.0:8080")
 	if err != nil {
 		fmt.Println("Listen failed, error:", err)
 		return
@@ -123,6 +132,6 @@ func main() {
 			fmt.Println("Accept failed, error:", err)
 			continue
 		}
-		go acceptRequest(conn)
+		acceptRequest(conn)
 	}
 }
