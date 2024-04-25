@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -30,7 +31,7 @@ func acceptRequest(conn net.Conn) {
 	if strings.Contains(data["url"], "?") {
 		cgi = true
 		loc := strings.Index(data["url"], "?")
-		data["param"] = data["url"][loc:]
+		data["param"] = data["url"][loc+1:]
 		data["url"] = data["url"][:loc]
 		fmt.Println(cgi)
 	} else if data["method"] == "post" {
@@ -81,7 +82,7 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 		serverInternalError(conn)
 		return nil, "server error 500"
 	}
-	data["method"] = parts[0]
+	data["method"] = strings.ToUpper(parts[0])
 	data["url"] = parts[1]
 	data["headers"] = ""
 	data["body"] = ""
@@ -89,7 +90,7 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	if err != nil {
 		return nil, err
 	}
-	for { //TODO 如果报文是错误的，比如只有一半报文被传输，如何添加\r\n使得报文整体不出错
+	for {
 		line, err = reader.ReadBytes('\n')
 		//fmt.Printf("current line-> %q\n", line)
 		if err == io.EOF {
@@ -107,17 +108,26 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 		methodNotAllowed(conn)
 		return nil, err
 	}
-	//var buf [1024]byte
-	//length, _ := reader.Read(buf[:])
-	//fmt.Printf("剩余内容%q\n", string(buf[:length]))
 
 	if strings.ToLower(data["method"]) == "post" {
+		//TODO 判断有没有Content-Length:，如果没有就抛出异常，有就按照Content-Length:读取内容
 		var buf []byte
-		n, err := reader.Read(buf)
-		if err != nil {
-			return nil, err
+		flag1 := false
+		parts := strings.Split(data["headers"], "\r\n")
+		for i := 0; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "Content-Length:") {
+				data["Content-Length"] = parts[i]
+				flag1 = true
+				break
+			}
 		}
-		data["body"] = string(buf[:n])
+		if !flag1 {
+			serverInternalError(conn)
+			return nil, "Bad Http Headers"
+		}
+		scan := bufio.NewScanner(reader)
+		scan.Bytes()
+
 	}
 	//fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
@@ -134,13 +144,24 @@ func headers(conn net.Conn) (bool, any) {
 	return true, nil
 }
 
-//
-//func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error) {
-//	//TODO 执行CGI
-//	var input chan string
-//	os.Executable()
-//	return true, nil
-//}
+func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error) {
+	//TODO 执行CGI
+	cmd := exec.Command(path)
+	//设置环境变量REQUEST_METHOD
+	cmd.Env = append(cmd.Env, "REQUEST_METHOD="+data["method"])
+	if data["param"] != "" {
+		cmd.Env = append(cmd.Env, "QUERY_STRING="+data["param"])
+	}
+	//if data["method"] == "POST" {
+	//	parts := strings.Split(data["headers"], "\r\n")
+	//	for i := 0; i < len(parts); i++ {
+	//		if strings.HasPrefix(parts[i], "Content-Length:") {
+	//
+	//		}
+	//	}
+	//}
+	return true, nil
+}
 
 func renderFile(conn net.Conn, path string) (bool, error) {
 
