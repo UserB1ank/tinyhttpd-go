@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,15 +29,21 @@ func acceptRequest(conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(data)
+
+	//test
 	t, err := headers(conn)
 	if !t && err != nil {
 		fmt.Println("write headers error:", err)
 		return
 	}
-	var test []byte
-	test = append(test, []byte("haha")...)
-	conn.Write(test)
+	_, err2 := renderFile(conn, data["url"])
+	if err2 != nil {
+		fmt.Println(err2)
+		return
+	}
+	//var test []byte
+	//test = append(test, []byte("haha")...)
+	//conn.Write(test)
 }
 
 func headers(conn net.Conn) (bool, any) {
@@ -45,9 +53,6 @@ func headers(conn net.Conn) (bool, any) {
 		SERVER_STRING +
 		"\r\n"
 	buf = append(buf, []byte(s)...)
-	fmt.Println(buf)
-	//fmt.Println(string(buf[:]))
-	fmt.Println(len(buf))
 	_, err := conn.Write(buf[:])
 	if err != nil {
 		return false, nil
@@ -59,8 +64,21 @@ func executeCGI() {
 	//TODO 执行CGI
 }
 
-func renderFile() {
-	//TODO 渲染网页文件
+func renderFile(conn net.Conn, path string) (bool, error) {
+	filePath := "." + path
+	fileInfo, _ := os.Stat(filePath)
+	if fileInfo.IsDir() {
+		filePath = filepath.Join(filePath, "index.html")
+	}
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, err
+	}
+	_, err = conn.Write(file)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 /*处理报文，返回一个map，存储了http报文的method,URL,http版本(暂未获取),headers,body
