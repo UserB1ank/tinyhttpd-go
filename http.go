@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -112,11 +113,17 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	if strings.ToLower(data["method"]) == "post" {
 		//TODO 判断有没有Content-Length:，如果没有就抛出异常，有就按照Content-Length:读取内容
 		var buf []byte
+		var length int
 		flag1 := false
 		parts := strings.Split(data["headers"], "\r\n")
 		for i := 0; i < len(parts); i++ {
 			if strings.HasPrefix(parts[i], "Content-Length:") {
 				data["Content-Length"] = parts[i]
+				length, err = strconv.Atoi(strings.TrimLeft(parts[i], "Content-Length: "))
+				if err != nil {
+					serverInternalError(conn)
+					return nil, err
+				}
 				flag1 = true
 				break
 			}
@@ -125,11 +132,16 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 			serverInternalError(conn)
 			return nil, "Bad Http Headers"
 		}
-		scan := bufio.NewScanner(reader)
-		scan.Bytes()
-
+		for i := 0; i < reader.Size() && i < length; i++ {
+			char, err := reader.ReadByte()
+			if err != nil {
+				return nil, err
+			}
+			buf = append(buf, char)
+		}
+		data["body"] = string(buf)
 	}
-	//fmt.Printf("HTTP 报文：\n%q\n", data)
+	fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
 }
 func headers(conn net.Conn) (bool, any) {
