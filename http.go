@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -60,11 +61,12 @@ func acceptRequest(conn net.Conn) {
 	}
 	//处理cgi
 	if cgi {
-
+		_, err2 := executeCGI(conn, filePath, data)
+		if err2 != nil {
+			serverInternalError(conn)
+			return
+		}
 	}
-	//var test []byte
-	//test = append(test, []byte("haha")...)
-	//conn.Write(test)
 }
 
 /*处理报文，返回一个map，存储了http报文的method,URL,http版本(暂未获取),headers,body
@@ -158,20 +160,34 @@ func headers(conn net.Conn) (bool, any) {
 
 func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error) {
 	//TODO 执行CGI
-	cmd := exec.Command(path)
-	//设置环境变量REQUEST_METHOD
-	cmd.Env = append(cmd.Env, "REQUEST_METHOD="+data["method"])
-	if data["param"] != "" {
-		cmd.Env = append(cmd.Env, "QUERY_STRING="+data["param"])
+	var cmd *exec.Cmd
+	//判断os
+	if runtime.GOOS == "windows" {
+		if data["method"] == "POST" {
+			cmd = exec.Command("powershell.exe", path, data["body"])
+		} else {
+			cmd = exec.Command("powershell.exe", path)
+		}
+	} else {
+		if data["method"] == "POST" {
+			cmd = exec.Command(path, data["body"])
+		} else {
+			cmd = exec.Command(path)
+		}
 	}
-	//if data["method"] == "POST" {
-	//	parts := strings.Split(data["headers"], "\r\n")
-	//	for i := 0; i < len(parts); i++ {
-	//		if strings.HasPrefix(parts[i], "Content-Length:") {
-	//
-	//		}
-	//	}
-	//}
+	//设置环境变量REQUEST_METHOD
+	cmd.Env = append(os.Environ(), "REQUEST_METHOD="+"\""+data["method"]+"\"")
+	if data["param"] != "" {
+		cmd.Env = append(os.Environ(), "QUERY_STRING=\""+data["param"+"\""])
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println(err)
+		return false, err
+	}
+	fmt.Println(output)
+	headers(conn)
+	conn.Write(output)
 	return true, nil
 }
 
