@@ -175,7 +175,7 @@ func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error
 	//设置环境变量REQUEST_METHOD
 	cmd.Env = append(os.Environ(), "REQUEST_METHOD="+"\""+data["method"]+"\"")
 	if data["param"] != "" {
-		cmd.Env = append(os.Environ(), "QUERY_STRING=\""+data["param"+"\""])
+		cmd.Env = append(os.Environ(), "QUERY_STRING=\""+data["param"]+"\"")
 	}
 	output, err := cmd.Output()
 	if err != nil {
