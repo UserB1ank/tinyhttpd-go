@@ -81,7 +81,6 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	}
 	parts := strings.Fields(string(line))
 	if len(parts) < 2 {
-		//TODO 抛出 500 error
 		serverInternalError(conn)
 		return nil, "server error 500"
 	}
@@ -113,7 +112,6 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	}
 
 	if strings.ToLower(data["method"]) == "post" {
-		//TODO 判断有没有Content-Length:，如果没有就抛出异常，有就按照Content-Length:读取内容
 		var buf []byte
 		var length int
 		flag1 := false
@@ -159,7 +157,6 @@ func headers(conn net.Conn) (bool, any) {
 }
 
 func executeCGI(conn net.Conn, path string, data map[string]string) (bool, error) {
-	//TODO 执行CGI
 	var cmd *exec.Cmd
 	//判断os
 	if runtime.GOOS == "windows" {
@@ -205,7 +202,6 @@ func renderFile(conn net.Conn, path string) (bool, error) {
 	return true, nil
 }
 func notFound(conn net.Conn) (bool, error) {
-	//TODO 404error
 	s := "HTTP/1.0 404 NOT FOUND\r\n" +
 		"Content-Type: text/html\r\n" +
 		SERVER_STRING +
@@ -223,7 +219,6 @@ func notFound(conn net.Conn) (bool, error) {
 }
 
 func serverInternalError(conn net.Conn) (bool, error) {
-	//TODO 500
 	s := "HTTP/1.1 500 Internal Server Error\r\n" +
 		"Content-Type: text/html\r\n" +
 		"\r\n" +
@@ -245,7 +240,6 @@ func serverInternalError(conn net.Conn) (bool, error) {
 	return true, nil
 }
 func methodNotAllowed(conn net.Conn) (bool, error) {
-	//TODO 500
 	s := "HTTP/1.1 405 Method Not Allowed\r\n" +
 		"Allow: GET, POST, PUT\r\n" +
 		"Content-Type: text/html\r\n" +
@@ -281,6 +275,6 @@ func main() {
 			fmt.Println("Accept failed, error:", err)
 			continue
 		}
-		acceptRequest(conn)
+		go acceptRequest(conn)
 	}
 }
