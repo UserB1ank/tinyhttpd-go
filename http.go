@@ -35,25 +35,32 @@ func acceptRequest(conn net.Conn) {
 		loc := strings.Index(data["url"], "?")
 		data["param"] = data["url"][loc+1:]
 		data["url"] = data["url"][:loc]
-		fmt.Println(cgi)
+		fmt.Println("cgi", cgi)
 	} else if data["method"] == "post" {
 		cgi = true
 	}
 	//判断url是否正确
 	filePath := "." + data["url"]
 	fileInfo, err1 := os.Stat(filePath)
-	if os.IsNotExist(err1) {
+
+	// todo: 处理index.html 404 问题
+	if err1 != nil {
 		notFound(conn)
 		return
-	}
-	if fileInfo.IsDir() {
+	} else if fileInfo.IsDir() {
 		filePath = filepath.Join(filePath, "index.html")
+		_, err2 := os.Stat(filePath)
+		if err2 != nil {
+			notFound(conn)
+			return
+		}
 	}
 
 	//处理常规GET请求
 	if strings.ToLower(data["method"]) == "get" && !cgi {
 		_, err = renderFile(conn, filePath)
 		if err != nil {
+			// 404 not found
 			fmt.Println(err)
 			return
 		}
@@ -144,6 +151,7 @@ func resolveHttp(reader *bufio.Reader, conn net.Conn) (map[string]string, any) {
 	fmt.Printf("HTTP 报文：\n%q\n", data)
 	return data, nil
 }
+
 func headers(conn net.Conn) (bool, any) {
 	s := "HTTP/2 200 OK\r\n" +
 		"Content-Type: text/html\r\n" +
@@ -192,6 +200,7 @@ func renderFile(conn net.Conn, path string) (bool, error) {
 
 	file, err := os.ReadFile(path)
 	if err != nil {
+		// 404 not found
 		return false, err
 	}
 	headers(conn)
@@ -201,6 +210,7 @@ func renderFile(conn net.Conn, path string) (bool, error) {
 	}
 	return true, nil
 }
+
 func notFound(conn net.Conn) (bool, error) {
 	s := "HTTP/1.0 404 NOT FOUND\r\n" +
 		"Content-Type: text/html\r\n" +
@@ -211,6 +221,29 @@ func notFound(conn net.Conn) (bool, error) {
 		"your request because the resource specified\r\n" +
 		"is unavailable or nonexistent.\r\n" +
 		"</BODY></HTML>\r\n"
+	_, err := conn.Write([]byte(s))
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func methodNotAllowed(conn net.Conn) (bool, error) {
+	s := "HTTP/1.1 405 Method Not Allowed\r\n" +
+		"Allow: GET, POST, PUT\r\n" +
+		"Content-Type: text/html\r\n" +
+		"\r\n" +
+		"<!DOCTYPE html>\r\n" +
+		"<html lang=\"en\">\r\n" +
+		"<head>\r\n" +
+		"    <meta charset=\"UTF-8\">\r\n" +
+		"    <title>405 Method Not Allowed</title>\r\n" +
+		"</head>\r\n" +
+		"<body>\r\n" +
+		"    <h1>405 Method Not Allowed</h1>\r\n" +
+		"    <p>The requested method is not allowed for the requested resource.</p>\r\n" +
+		"</body>\r\n" +
+		"</html>\r\n"
 	_, err := conn.Write([]byte(s))
 	if err != nil {
 		return false, err
@@ -239,31 +272,24 @@ func serverInternalError(conn net.Conn) (bool, error) {
 	}
 	return true, nil
 }
-func methodNotAllowed(conn net.Conn) (bool, error) {
-	s := "HTTP/1.1 405 Method Not Allowed\r\n" +
-		"Allow: GET, POST, PUT\r\n" +
-		"Content-Type: text/html\r\n" +
-		"\r\n" +
-		"<!DOCTYPE html>\r\n" +
-		"<html lang=\"en\">\r\n" +
-		"<head>\r\n" +
-		"    <meta charset=\"UTF-8\">\r\n" +
-		"    <title>405 Method Not Allowed</title>\r\n" +
-		"</head>\r\n" +
-		"<body>\r\n" +
-		"    <h1>405 Method Not Allowed</h1>\r\n" +
-		"    <p>The requested method is not allowed for the requested resource.</p>\r\n" +
-		"</body>\r\n" +
-		"</html>\r\n"
-	_, err := conn.Write([]byte(s))
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
 
 func main() {
-	listen, err := net.Listen("tcp", "0.0.0.0:8080")
+	argIn := os.Args[1:]
+	var (
+		listen net.Listener
+		err    error
+	)
+	if len(argIn) > 0 {
+		if sok := strings.Split(argIn[0], ":"); len(sok) == 2 {
+			listen, err = net.Listen("tcp", fmt.Sprintf("%s:%s", sok[0], sok[1]))
+		} else {
+			listen, err = net.Listen("tcp", "0.0.0.0:"+argIn[0])
+		}
+	} else {
+		listen, err = net.Listen("tcp", "0.0.0.0:8080")
+		// add custom socket to listen
+	}
+
 	if err != nil {
 		fmt.Println("Listen failed, error:", err)
 		return
